@@ -127,7 +127,7 @@ def get_driver(timeout=30):
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=800,600") # Extreme small window to save RAM
+    options.add_argument("--window-size=1280,720") # Smaller window to save RAM
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--disable-extensions")
     options.add_argument("--mute-audio")
@@ -140,11 +140,6 @@ def get_driver(timeout=30):
     options.add_argument("--metrics-recording-only")
     options.add_argument("--safebrowsing-disable-auto-update")
     options.add_argument("--disable-default-apps")
-    
-    # ULTIMATE MEMORY SAVING FLAGS
-    options.add_argument("--single-process") # Force everything into one process (Saves ~100-200MB)
-    options.add_argument("--js-flags='--jitless --noexpose_wasm'") # Disable JS JIT (Dramatically lowers RAM)
-    options.add_argument("--disable-setuid-sandbox")
     options.add_argument("--memory-pressure-off")
     
     options.page_load_strategy = "normal"
