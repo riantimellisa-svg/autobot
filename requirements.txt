@@ -1,0 +1,5 @@
+pyTelegramBotAPI
+selenium
+webdriver-manager
+requests
+urllib3
