@@ -127,7 +127,7 @@ def get_driver(timeout=30):
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1280,720") # Smaller window to save RAM
+    options.add_argument("--window-size=800,600")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--disable-extensions")
     options.add_argument("--mute-audio")
@@ -138,9 +138,16 @@ def get_driver(timeout=30):
     options.add_argument("--disable-sync")
     options.add_argument("--disable-translate")
     options.add_argument("--metrics-recording-only")
-    options.add_argument("--safebrowsing-disable-auto-update")
     options.add_argument("--disable-default-apps")
+    
+    # LOW-RAM SHIELD (Railway 1GB Special)
+    options.add_argument("--single-process")
+    options.add_argument("--no-zygote") # Kill zygote process to save ~50MB RAM
+    options.add_argument("--disable-features=SharedArrayBuffer") # Extra RAM save
+    options.add_argument("--js-flags='--jitless --max-old-space-size=256 --noexpose_wasm'")
+    options.add_argument("--disable-setuid-sandbox")
     options.add_argument("--memory-pressure-off")
+    options.add_argument("--disable-dev-shm-usage")
     
     options.page_load_strategy = "normal"
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -327,8 +334,11 @@ def threaded_run(chat_id, chunk, lock, callback):
                 continue
             
             try:
+                # PHASE 1: Loading (Give it time to breathe)
                 driver.get(target)
-                time.sleep(random.uniform(2, 4)) # Extra wait for cloud latency
+                time.sleep(random.uniform(5, 8)) # Wait for assets and JS
+                
+                # PHASE 2: Identity & Simulation
                 load_cookies(driver, target)
                 ghost_behavior(driver)
                 solve_math(driver)
@@ -338,7 +348,9 @@ def threaded_run(chat_id, chunk, lock, callback):
                 site = CONFIG["target_web"]
                 comment = random.choice(comments) if comments else "Nice article!"
                 
+                # PHASE 3: Smart Detection
                 box = None
+                time.sleep(2) # Stability pause
                 for p in ["//textarea[contains(@id, 'comment')]", "//textarea[contains(@name, 'comment')]", "//textarea"]:
                     try:
                         el = driver.find_element(By.XPATH, p)
@@ -346,6 +358,7 @@ def threaded_run(chat_id, chunk, lock, callback):
                     except: continue
                 
                 if box:
+                    # Slow Typing Simulation (Safe mode)
                     for w in ["author", "name"]:
                         try: driver.find_element(By.XPATH, f"//input[contains(@id, '{w}') or contains(@name, '{w}')]").send_keys(nick); break
                         except: pass
@@ -357,6 +370,7 @@ def threaded_run(chat_id, chunk, lock, callback):
                         except: pass
                     
                     box.send_keys(comment)
+                    time.sleep(2) # Breath before submission
                     
                     submit = None
                     for p in ["//input[@type='submit']", "//button[@type='submit']", "//*[contains(@id, 'submit')]"]:
@@ -367,17 +381,32 @@ def threaded_run(chat_id, chunk, lock, callback):
                     
                     if submit:
                         driver.execute_script("arguments[0].click();", submit)
-                        driver.execute_script("window.stop();")
+                        time.sleep(4) # Wait for confirmation redirect
                         save_cookies(driver, target)
                         with lock: CONFIG["current_stats"]["success"] += 1
-                else: 
-                    with lock: 
-                        CONFIG["current_stats"]["failed"] += 1
-                        CONFIG["last_error"] = "Form not found or hidden"
+                    else: 
+                        with lock: 
+                            CONFIG["current_stats"]["failed"] += 1
+                            CONFIG["last_error"] = "Submit button hidden"
+                else:
+                    with lock: CONFIG["current_stats"]["skipped"] += 1
+                    remove_from_list("list.txt", target)
+                    
+                # PHASE 4: Cool down (Protect the RAM)
+                time.sleep(5) 
+                
             except Exception as e: 
+                err_msg = str(e)
                 with lock: 
                     CONFIG["current_stats"]["failed"] += 1
-                    CONFIG["last_error"] = str(e)[:100]
+                    CONFIG["last_error"] = err_msg[:100]
+                
+                if "tab crashed" in err_msg.lower() or "session" in err_msg.lower():
+                    time.sleep(10) # Heavy rest after crash
+                    try:
+                        driver.quit()
+                        driver = get_driver()
+                    except: pass
             
             with lock: CONFIG["current_stats"]["processed"] += 1
     finally:
