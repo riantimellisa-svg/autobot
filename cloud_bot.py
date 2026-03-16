@@ -149,9 +149,9 @@ def ghost_behavior(driver):
 
 def turbine_precheck(url):
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'}
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'}
         response = requests.get(url, headers=headers, timeout=5, verify=False)
-        return response.status_code == 200 and ('<form' in response.text.lower() or 'textarea' in response.text.lower())
+        return response.status_code == 200
     except: return False
 
 def get_driver(timeout=30):
@@ -170,27 +170,33 @@ def get_driver(timeout=30):
     options.add_argument("--disable-background-networking")
     options.add_argument("--disable-sync")
     options.add_argument("--disable-translate")
-    options.add_argument("--metrics-recording-only")
-    options.add_argument("--disable-default-apps")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
     
     # LOW-RAM SHIELD (Railway 1GB Special)
     options.add_argument("--single-process")
-    options.add_argument("--no-zygote") # Kill zygote process to save ~50MB RAM
-    options.add_argument("--disable-features=SharedArrayBuffer") # Extra RAM save
+    options.add_argument("--no-zygote")
+    options.add_argument("--disable-features=SharedArrayBuffer")
     options.add_argument("--js-flags='--jitless --max-old-space-size=256 --noexpose_wasm'")
     options.add_argument("--disable-setuid-sandbox")
     options.add_argument("--memory-pressure-off")
-    options.add_argument("--disable-dev-shm-usage")
     
     options.page_load_strategy = "normal"
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     options.add_argument(f"user-agent={ua}")
     
+    # Direct path to Chrome on Linux Railway
     if os.path.exists("/usr/bin/google-chrome"):
         options.binary_location = "/usr/bin/google-chrome"
         
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=options)
+    try:
+        # Avoid ChromeDriverManager in Cloud if possible
+        driver = webdriver.Chrome(options=options)
+    except:
+        # Fallback if needed, but path above is preferred
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
+        
     driver.execute_cdp_cmd("Network.setBlockedURLs", {"urls": ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.svg", "*.webp", "*.mp4", "*.css*"]})
     driver.execute_cdp_cmd("Network.enable", {})
     driver.set_page_load_timeout(timeout)
@@ -375,9 +381,9 @@ def threaded_run(chat_id, chunk, lock, callback):
                 continue
             
             try:
-                # PHASE 1: Loading (Give it time to breathe)
+                # PHASE 1: Loading
                 driver.get(target)
-                time.sleep(random.uniform(5, 8)) # Wait for assets and JS
+                time.sleep(random.uniform(5, 8))
                 
                 # PHASE 2: Identity & Simulation
                 load_cookies(driver, target)
@@ -389,9 +395,9 @@ def threaded_run(chat_id, chunk, lock, callback):
                 site = CONFIG["target_web"]
                 comment = random.choice(comments) if comments else "Nice article!"
                 
-                # PHASE 3: Smart Detection
+                # PHASE 3: Detection & Input
                 box = None
-                time.sleep(2) # Stability pause
+                time.sleep(2)
                 for p in ["//textarea[contains(@id, 'comment')]", "//textarea[contains(@name, 'comment')]", "//textarea"]:
                     try:
                         el = driver.find_element(By.XPATH, p)
@@ -399,7 +405,6 @@ def threaded_run(chat_id, chunk, lock, callback):
                     except: continue
                 
                 if box:
-                    # Slow Typing Simulation (Safe mode)
                     for w in ["author", "name"]:
                         try: driver.find_element(By.XPATH, f"//input[contains(@id, '{w}') or contains(@name, '{w}')]").send_keys(nick); break
                         except: pass
@@ -411,7 +416,7 @@ def threaded_run(chat_id, chunk, lock, callback):
                         except: pass
                     
                     box.send_keys(comment)
-                    time.sleep(2) # Breath before submission
+                    time.sleep(2)
                     
                     submit = None
                     for p in ["//input[@type='submit']", "//button[@type='submit']", "//*[contains(@id, 'submit')]"]:
@@ -422,7 +427,7 @@ def threaded_run(chat_id, chunk, lock, callback):
                     
                     if submit:
                         driver.execute_script("arguments[0].click();", submit)
-                        time.sleep(4) # Wait for confirmation redirect
+                        time.sleep(4)
                         save_cookies(driver, target)
                         with lock: CONFIG["current_stats"]["success"] += 1
                     else: 
@@ -433,25 +438,29 @@ def threaded_run(chat_id, chunk, lock, callback):
                     with lock: CONFIG["current_stats"]["skipped"] += 1
                     remove_from_list("list.txt", target)
                     
-                # PHASE 4: Cool down (Protect the RAM)
                 time.sleep(5) 
                 
             except Exception as e: 
                 err_msg = str(e)
                 with lock: 
                     CONFIG["current_stats"]["failed"] += 1
-                    CONFIG["last_error"] = err_msg[:100]
+                    CONFIG["last_error"] = f"Target Error: {err_msg[:100]}"
                 
                 if "tab crashed" in err_msg.lower() or "session" in err_msg.lower():
-                    time.sleep(10) # Heavy rest after crash
+                    time.sleep(10)
                     try:
                         driver.quit()
                         driver = get_driver()
                     except: pass
             
             with lock: CONFIG["current_stats"]["processed"] += 1
+    except Exception as e:
+        with lock:
+            CONFIG["last_error"] = f"Critical Thread Error: {str(e)}"
     finally:
-        if driver: driver.quit()
+        if driver: 
+            try: driver.quit()
+            except: pass
         callback()
 
 if __name__ == "__main__":
