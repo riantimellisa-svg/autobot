@@ -1,18 +1,25 @@
 # Use an official Python runtime as a parent image
 FROM python:3.12-slim
 
-# Install basic system dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     wget \
+    curl \
     gnupg \
     unzip \
-    curl \
+    libnss3 \
+    libgbm1 \
+    libasound2 \
+    fonts-liberation \
+    libappindicator3-1 \
+    xdg-utils \
+    --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Google Chrome and its dependencies
-RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list \
+# Install Google Chrome using the modern and robust method
+RUN curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
     && apt-get update \
     && apt-get install -y google-chrome-stable \
     && apt-get clean \
