@@ -12,6 +12,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
+import json
 
 # ==========================================================
 # CONFIGURATION & GLOBALS
@@ -39,10 +40,34 @@ CONFIG = {
 
 STOP_EVENT = threading.Event()
 FILE_LOCK = threading.Lock()
-COOKIE_DIR = "sentinel_cookies"
+# Persistent Data (Link to Railway Volume)
+DATA_DIR = "/app/data" if os.path.exists("/app") else "bot_data"
+CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
+COOKIE_DIR = os.path.join(DATA_DIR, "sentinel_cookies")
 
-if not os.path.exists(COOKIE_DIR):
-    os.makedirs(COOKIE_DIR)
+if not os.path.exists(DATA_DIR): os.makedirs(DATA_DIR)
+if not os.path.exists(COOKIE_DIR): os.makedirs(COOKIE_DIR)
+
+def save_config():
+    try:
+        # Save only critical config, not runtime stats
+        persist_data = {
+            "target_web": CONFIG["target_web"],
+            "keywords": CONFIG["keywords"],
+            "emails": CONFIG["emails"],
+            "threads": CONFIG["threads"]
+        }
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(persist_data, f)
+    except: pass
+
+def load_config():
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, "r") as f:
+                saved = json.load(f)
+                CONFIG.update(saved)
+    except: pass
 
 # ==========================================================
 # BOT ENGINE LOGIC (Optimized for Headless Cloud)
@@ -50,10 +75,18 @@ if not os.path.exists(COOKIE_DIR):
 
 def load_list(file):
     try:
-        if not os.path.exists(file): return []
-        with open(file, "r", encoding="utf-8", errors="ignore") as f:
-            return [line.strip() for line in f if line.strip() and not line.startswith("#")]
-    except: return []
+        # Use absolute path to avoid Railway directory confusion
+        abs_path = os.path.abspath(file)
+        if not os.path.exists(abs_path): 
+            print(f"DEBUG: File not found at {abs_path}")
+            return []
+        with open(abs_path, "r", encoding="utf-8", errors="ignore") as f:
+            data = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+            print(f"DEBUG: Loaded {len(data)} lines from {file}")
+            return data
+    except Exception as e: 
+        print(f"DEBUG: Error loading {file}: {e}")
+        return []
 
 def remove_from_list(file_path, target_line):
     with FILE_LOCK:
@@ -191,6 +224,7 @@ def set_web(message):
             bot.reply_to(message, "❌ URL harus diawali http/https")
             return
         CONFIG["target_web"] = url
+        save_config()
         bot.reply_to(message, f"✅ Target Web Set to: {url}")
     except:
         bot.reply_to(message, "❌ Format salah. Contoh: /web https://google.com")
@@ -200,6 +234,7 @@ def set_keyword(message):
     try:
         keywords = [k.strip() for k in message.text.split(" ", 1)[1].split(",")]
         CONFIG["keywords"] = keywords
+        save_config()
         bot.reply_to(message, f"✅ Identity Pool Updated: {', '.join(keywords)}")
     except:
         bot.reply_to(message, "❌ Format salah. Contoh: /keyword Agus, Yanto, Budi")
@@ -209,6 +244,7 @@ def set_email(message):
     try:
         emails = [e.strip() for e in message.text.split(" ", 1)[1].split(",")]
         CONFIG["emails"] = emails
+        save_config()
         bot.reply_to(message, f"✅ Email Pool Updated: {', '.join(emails)}")
     except:
         bot.reply_to(message, "❌ Format salah. Contoh: /email bot1@mail.com, bot2@mail.com")
@@ -219,6 +255,7 @@ def set_threads(message):
         num = int(message.text.split(" ", 1)[1].strip())
         if 1 <= num <= 5:
             CONFIG["threads"] = num
+            save_config()
             bot.reply_to(message, f"✅ Thread Pool Set to: {num}\n⚠️ Note: 2 vCPU & 1GB RAM optimal at 2-3 threads.")
         else:
             bot.reply_to(message, "❌ Pilih antara 1 sampai 5 thread saja bosku (ingat RAM 1GB).")
@@ -268,9 +305,13 @@ def run_engine(message):
     
     targets = load_list("list.txt")
     if not targets:
-        bot.reply_to(message, "❌ Error: list.txt kosong atau tidak ada.")
+        bot.reply_to(message, "❌ **ERROR CRITICAL**\n`list.txt` tidak ditemukan atau kosong di server Railway.\n\nPastikan file `list.txt` sudah diupload ke GitHub di folder yang sama dengan `cloud_bot.py`.")
         CONFIG["is_running"] = False
         return
+    
+    comments = load_list("komen.txt")
+    if not comments:
+        bot.reply_to(message, "⚠️ **WARNING**\n`komen.txt` kosong. Bot akan menggunakan komentar default.")
 
     # Reset & Init Stats
     CONFIG["current_stats"] = {
@@ -414,5 +455,6 @@ def threaded_run(chat_id, chunk, lock, callback):
         callback()
 
 if __name__ == "__main__":
-    print("4NOMALI Telegram Bot Started...")
+    load_config() # Restore previous mission settings
+    print(f"4NOMALI Telegram Bot Started... Path: {DATA_DIR}")
     bot.infinity_polling()
