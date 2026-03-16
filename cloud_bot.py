@@ -127,10 +127,11 @@ def get_driver(timeout=30):
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080") # Set standard size
+    options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-blink-features=AutomationControlled")
-    options.page_load_strategy = "normal" # More robust than eager
-    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+    options.page_load_strategy = "normal"
+    # Modern Windows User Agent to hide Linux/Cloud origin
+    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     options.add_argument(f"user-agent={ua}")
     
     # In Linux/Railway, Chrome is usually at /usr/bin/google-chrome
@@ -285,9 +286,14 @@ def final_report(chat_id, stats):
         f"✅ SUCCESS : {stats['success']}\n"
         f"❌ FAILED  : {stats['failed']}\n"
         f"⏭️ SKIPPED : {stats['skipped']}\n"
+        f"🌍 PROCESSED: {stats['processed']}/{stats['total']}\n"
         "----------------------------\n"
-        "All threads joined. System Standby."
     )
+    if CONFIG["last_error"]:
+        final_msg += f"⚠️ **LAST ERROR:**\n`{CONFIG['last_error']}`"
+    else:
+        final_msg += "System Standby. Over and out."
+        
     bot.send_message(chat_id, final_msg, parse_mode="Markdown")
 
 def threaded_run(chat_id, chunk, lock, callback):
@@ -296,6 +302,9 @@ def threaded_run(chat_id, chunk, lock, callback):
     driver = None
     try:
         driver = get_driver()
+        # Initial wait to let resources settle
+        time.sleep(2)
+        
         for target in chunk:
             if STOP_EVENT.is_set(): break
             
@@ -308,6 +317,7 @@ def threaded_run(chat_id, chunk, lock, callback):
             
             try:
                 driver.get(target)
+                time.sleep(random.uniform(2, 4)) # Extra wait for cloud latency
                 load_cookies(driver, target)
                 ghost_behavior(driver)
                 solve_math(driver)
