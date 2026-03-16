@@ -30,8 +30,11 @@ bot = telebot.TeleBot(TOKEN)
 CONFIG = {
     "target_web": "",
     "keywords": [],
-    "emails": [], # Added for Telegram control
-    "is_running": False
+    "emails": [],
+    "threads": 1,
+    "is_running": False,
+    "current_stats": {"success": 0, "failed": 0, "skipped": 0, "total": 0, "processed": 0},
+    "last_error": "" # Diagnostic field
 }
 
 STOP_EVENT = threading.Event()
@@ -124,9 +127,10 @@ def get_driver(timeout=30):
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080") # Set standard size
     options.add_argument("--disable-blink-features=AutomationControlled")
-    options.page_load_strategy = "eager"
-    ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    options.page_load_strategy = "normal" # More robust than eager
+    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
     options.add_argument(f"user-agent={ua}")
     
     # In Linux/Railway, Chrome is usually at /usr/bin/google-chrome
@@ -150,12 +154,13 @@ def send_welcome(message):
         "🔥 **4NOMALI CLOUD ENGINE v13.0** 🔥\n\n"
         "Control Commands:\n"
         "/web <url> - Set target website\n"
-        "/keyword <nama1, nama2, nama3> - Set names\n"
-        "/email <email1, email2> - Set email pool\n"
-        "/gas - Start engine (using list.txt on server)\n"
+        "/keyword <name1, name2> - Set names\n"
+        "/email <email1, email2> - Set emails\n"
+        "/threads <num> - Set parallel workers (1-3 recommended for 1GB RAM)\n"
+        "/gas - Start engine\n"
         "/stop - Emergency abort\n"
-        "/status - Check current configuration\n\n"
-        "Ready for deployment on Railway."
+        "/status - Check configuration\n\n"
+        "Optimization: 4NOMALI Cloud is ready."
     )
     bot.reply_to(message, help_text, parse_mode="Markdown")
 
@@ -189,15 +194,39 @@ def set_email(message):
     except:
         bot.reply_to(message, "❌ Format salah. Contoh: /email bot1@mail.com, bot2@mail.com")
 
+@bot.message_handler(commands=['threads'])
+def set_threads(message):
+    try:
+        num = int(message.text.split(" ", 1)[1].strip())
+        if 1 <= num <= 5:
+            CONFIG["threads"] = num
+            bot.reply_to(message, f"✅ Thread Pool Set to: {num}\n⚠️ Note: 2 vCPU & 1GB RAM optimal at 2-3 threads.")
+        else:
+            bot.reply_to(message, "❌ Pilih antara 1 sampai 5 thread saja bosku (ingat RAM 1GB).")
+    except:
+        bot.reply_to(message, "❌ Format salah. Contoh: /threads 2")
+
 @bot.message_handler(commands=['status'])
 def show_status(message):
-    status = (
-        "📊 **CURRENT CONFIG**\n"
-        f"Web: {CONFIG['target_web'] or '❌ Not Set'}\n"
-        f"Names: {', '.join(CONFIG['keywords']) or '❌ Not Set'}\n"
-        f"Emails: {', '.join(CONFIG['emails']) or '❌ Not Set'}\n"
-        f"Running: {'🟢 ACTIVE' if CONFIG['is_running'] else '🔴 IDLE'}"
-    )
+    status = "📊 **4NOMALI STATUS REPORT**\n----------------------------\n"
+    status += f"Web: `{CONFIG['target_web'] or '❌ Not Set'}`\n"
+    status += f"Names: `{len(CONFIG['keywords'])} loaded`\n"
+    status += f"Emails: `{len(CONFIG['emails'])} loaded`\n"
+    status += f"Workers: `{CONFIG['threads']} Threads`\n"
+    
+    if CONFIG["is_running"]:
+        s = CONFIG["current_stats"]
+        perc = (s["processed"] / s["total"] * 100) if s["total"] > 0 else 0
+        status += f"\n🟢 **MISSION ACTIVE ({perc:.1f}%)**\n"
+        status += f"✅ Success: `{s['success']}`\n"
+        status += f"❌ Failed: `{s['failed']}`\n"
+        status += f"⏭️ Skipped: `{s['skipped']}`\n"
+        status += f"📦 Processed: `{s['processed']}/{s['total']}`"
+        if CONFIG["last_error"]:
+            status += f"\n\n⚠️ **LAST ERROR:**\n`{CONFIG['last_error']}`"
+    else:
+        status += "\n🔴 **SYSTEM IDLE**\nReady for next mission."
+    
     bot.reply_to(message, status, parse_mode="Markdown")
 
 @bot.message_handler(commands=['stop'])
@@ -217,28 +246,63 @@ def run_engine(message):
 
     CONFIG["is_running"] = True
     STOP_EVENT.clear()
-    bot.reply_to(message, "🚀 **MISSION STARTED**\nInitializing 4NOMALI engine on cloud server...")
     
-    threading.Thread(target=threaded_run, args=(message.chat.id,)).start()
-
-def threaded_run(chat_id):
-    stats = {"success": 0, "failed": 0, "skipped": 0}
     targets = load_list("list.txt")
-    comments = load_list("komen.txt")
-    
     if not targets:
-        bot.send_message(chat_id, "❌ Error: list.txt tidak ditemukan atau kosong di server.")
+        bot.reply_to(message, "❌ Error: list.txt kosong atau tidak ada.")
         CONFIG["is_running"] = False
         return
 
+    # Reset & Init Stats
+    CONFIG["current_stats"] = {
+        "success": 0, "failed": 0, "skipped": 0, 
+        "total": len(targets), "processed": 0, "done_threads": 0
+    }
+    
+    bot.reply_to(message, f"🚀 **MISSION STARTED**\nTarget: {len(targets)} URLs\nWorkers: {CONFIG['threads']} Threads")
+    
+    num_threads = CONFIG["threads"]
+    chunks = [targets[i::num_threads] for i in range(num_threads)]
+    lock = threading.Lock()
+
+    def thread_callback():
+        with lock:
+            CONFIG["current_stats"]["done_threads"] += 1
+            if CONFIG["current_stats"]["done_threads"] == num_threads:
+                final_report(message.chat.id, CONFIG["current_stats"])
+
+    for chunk in chunks:
+        if not chunk: 
+            thread_callback()
+            continue
+        threading.Thread(target=threaded_run, args=(message.chat.id, chunk, lock, thread_callback)).start()
+
+def final_report(chat_id, stats):
+    CONFIG["is_running"] = False
+    final_msg = (
+        "🏁 **MISSION COMPLETE 4NOMALI**\n"
+        "----------------------------\n"
+        f"✅ SUCCESS : {stats['success']}\n"
+        f"❌ FAILED  : {stats['failed']}\n"
+        f"⏭️ SKIPPED : {stats['skipped']}\n"
+        "----------------------------\n"
+        "All threads joined. System Standby."
+    )
+    bot.send_message(chat_id, final_msg, parse_mode="Markdown")
+
+def threaded_run(chat_id, chunk, lock, callback):
+    emails = CONFIG["emails"]
+    comments = load_list("komen.txt")
     driver = None
     try:
         driver = get_driver()
-        for target in targets:
+        for target in chunk:
             if STOP_EVENT.is_set(): break
             
             if not turbine_precheck(target):
-                stats["skipped"] += 1
+                with lock: 
+                    CONFIG["current_stats"]["skipped"] += 1
+                    CONFIG["current_stats"]["processed"] += 1
                 remove_from_list("list.txt", target)
                 continue
             
@@ -248,13 +312,11 @@ def threaded_run(chat_id):
                 ghost_behavior(driver)
                 solve_math(driver)
                 
-                # Form filling logic
                 nick = random.choice(CONFIG["keywords"])
-                mail = random.choice(CONFIG["emails"])
+                mail = random.choice(emails)
                 site = CONFIG["target_web"]
                 comment = random.choice(comments) if comments else "Nice article!"
                 
-                # Simplified smart find (no logging to avoid telegram overhead)
                 box = None
                 for p in ["//textarea[contains(@id, 'comment')]", "//textarea[contains(@name, 'comment')]", "//textarea"]:
                     try:
@@ -286,27 +348,20 @@ def threaded_run(chat_id):
                         driver.execute_script("arguments[0].click();", submit)
                         driver.execute_script("window.stop();")
                         save_cookies(driver, target)
-                        stats["success"] += 1
-                    else: stats["failed"] += 1
-                else:
-                    stats["skipped"] += 1
-                    remove_from_list("list.txt", target)
-            except: stats["failed"] += 1
+                        with lock: CONFIG["current_stats"]["success"] += 1
+                else: 
+                    with lock: 
+                        CONFIG["current_stats"]["failed"] += 1
+                        CONFIG["last_error"] = "Form not found or hidden"
+            except Exception as e: 
+                with lock: 
+                    CONFIG["current_stats"]["failed"] += 1
+                    CONFIG["last_error"] = str(e)[:100]
             
+            with lock: CONFIG["current_stats"]["processed"] += 1
     finally:
         if driver: driver.quit()
-        CONFIG["is_running"] = False
-        
-        final_msg = (
-            "🏁 **MISSION COMPLETE 4NOMALI**\n"
-            "----------------------------\n"
-            f"✅ SUCCESS : {stats['success']}\n"
-            f"❌ FAILED  : {stats['failed']}\n"
-            f"⏭️ SKIPPED : {stats['skipped']}\n"
-            "----------------------------\n"
-            "Cloud instance idle. Over and out."
-        )
-        bot.send_message(chat_id, final_msg, parse_mode="Markdown")
+        callback()
 
 if __name__ == "__main__":
     print("4NOMALI Telegram Bot Started...")
