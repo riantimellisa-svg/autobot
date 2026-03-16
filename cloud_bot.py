@@ -127,14 +127,30 @@ def get_driver(timeout=30):
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--window-size=800,600") # Extreme small window to save RAM
     options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--mute-audio")
+    options.add_argument("--no-first-run")
+    options.add_argument("--no-default-browser-check")
+    options.add_argument("--disable-component-update")
+    options.add_argument("--disable-background-networking")
+    options.add_argument("--disable-sync")
+    options.add_argument("--disable-translate")
+    options.add_argument("--metrics-recording-only")
+    options.add_argument("--safebrowsing-disable-auto-update")
+    options.add_argument("--disable-default-apps")
+    
+    # ULTIMATE MEMORY SAVING FLAGS
+    options.add_argument("--single-process") # Force everything into one process (Saves ~100-200MB)
+    options.add_argument("--js-flags='--jitless --noexpose_wasm'") # Disable JS JIT (Dramatically lowers RAM)
+    options.add_argument("--disable-setuid-sandbox")
+    options.add_argument("--memory-pressure-off")
+    
     options.page_load_strategy = "normal"
-    # Modern Windows User Agent to hide Linux/Cloud origin
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     options.add_argument(f"user-agent={ua}")
     
-    # In Linux/Railway, Chrome is usually at /usr/bin/google-chrome
     if os.path.exists("/usr/bin/google-chrome"):
         options.binary_location = "/usr/bin/google-chrome"
         
