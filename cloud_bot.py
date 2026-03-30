@@ -17,8 +17,6 @@ import json
 # ==========================================================
 # CONFIGURATION & GLOBALS
 # ==========================================================
-# Ganti dengan token dari BotFather jika ingin tes lokal, 
-# atau gunakan os.getenv("TELEGRAM_TOKEN") jika memakai Railway variables.
 TOKEN = "8690723145:AAGcxuiWN7ZHHZFPRwQZhkxIJ8bnIDse6HI"
 
 if not TOKEN:
@@ -35,13 +33,13 @@ CONFIG = {
     "threads": 1,
     "is_running": False,
     "current_stats": {"success": 0, "failed": 0, "skipped": 0, "total": 0, "processed": 0},
-    "last_error": "" # Diagnostic field
+    "last_error": "" 
 }
 
 STOP_EVENT = threading.Event()
 FILE_LOCK = threading.Lock()
-# Persistent Data (Link to Railway Volume)
-DATA_DIR = "/app/data" if os.path.exists("/app") else "bot_data"
+# Persistent Data
+DATA_DIR = "bot_data"
 CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
 COOKIE_DIR = os.path.join(DATA_DIR, "sentinel_cookies")
 
@@ -50,7 +48,6 @@ if not os.path.exists(COOKIE_DIR): os.makedirs(COOKIE_DIR)
 
 def save_config():
     try:
-        # Save only critical config, not runtime stats
         persist_data = {
             "target_web": CONFIG["target_web"],
             "keywords": CONFIG["keywords"],
@@ -59,7 +56,8 @@ def save_config():
         }
         with open(CONFIG_FILE, "w") as f:
             json.dump(persist_data, f)
-    except: pass
+    except Exception as e:
+        print(f"DEBUG: Save config error: {e}")
 
 def load_config():
     try:
@@ -70,19 +68,16 @@ def load_config():
     except: pass
 
 # ==========================================================
-# BOT ENGINE LOGIC (Optimized for Headless Cloud)
+# BOT ENGINE LOGIC (Optimized for RDP 8GB)
 # ==========================================================
 
 def load_list(file):
     try:
-        # Use absolute path to avoid Railway directory confusion
         abs_path = os.path.abspath(file)
         if not os.path.exists(abs_path): 
-            print(f"DEBUG: File not found at {abs_path}")
             return []
         with open(abs_path, "r", encoding="utf-8", errors="ignore") as f:
             data = [line.strip() for line in f if line.strip() and not line.startswith("#")]
-            print(f"DEBUG: Loaded {len(data)} lines from {file}")
             return data
     except Exception as e: 
         print(f"DEBUG: Error loading {file}: {e}")
@@ -139,20 +134,13 @@ def solve_math(driver):
 
 def ghost_behavior(driver):
     try:
+        # Fast human-like scrolling (RDP Optimized)
         height = driver.execute_script("return document.body.scrollHeight")
-        for _ in range(random.randint(2, 3)):
-            target = random.randint(100, min(height, 2000))
+        for _ in range(random.randint(1, 2)):
+            target = random.randint(300, min(height, 800))
             driver.execute_script(f"window.scrollTo({{top: {target}, behavior: 'smooth'}});")
-            time.sleep(random.uniform(0.5, 1.5))
-        time.sleep(random.uniform(1, 2))
+            time.sleep(random.uniform(0.3, 0.8))
     except: pass
-
-def turbine_precheck(url):
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'}
-        response = requests.get(url, headers=headers, timeout=5, verify=False)
-        return response.status_code == 200
-    except: return False
 
 def get_driver(timeout=30):
     options = Options()
@@ -160,40 +148,23 @@ def get_driver(timeout=30):
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=800,600")
+    options.add_argument("--window-size=1280,720")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--disable-extensions")
     options.add_argument("--mute-audio")
-    options.add_argument("--no-first-run")
-    options.add_argument("--no-default-browser-check")
-    options.add_argument("--disable-component-update")
-    options.add_argument("--disable-background-networking")
-    options.add_argument("--disable-sync")
-    options.add_argument("--disable-translate")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
     
-    # LOW-RAM SHIELD (Railway 1GB Special)
-    options.add_argument("--single-process")
-    options.add_argument("--no-zygote")
-    options.add_argument("--disable-features=SharedArrayBuffer")
-    options.add_argument("--js-flags='--jitless --max-old-space-size=256 --noexpose_wasm'")
-    options.add_argument("--disable-setuid-sandbox")
-    options.add_argument("--memory-pressure-off")
+    # TURBO MODE: Enabled (Multi-process allowed on 8GB RAM RDP)
+    options.add_argument("--disable-infobars")
+    options.add_argument("--disable-notifications")
+    options.add_argument("--disable-popup-blocking")
     
     options.page_load_strategy = "normal"
-    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/124.0.0.0 Safari/537.36"
     options.add_argument(f"user-agent={ua}")
     
-    # Direct path to Chrome on Linux Railway
-    if os.path.exists("/usr/bin/google-chrome"):
-        options.binary_location = "/usr/bin/google-chrome"
-        
     try:
-        # Avoid ChromeDriverManager in Cloud if possible
         driver = webdriver.Chrome(options=options)
     except:
-        # Fallback if needed, but path above is preferred
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
         
@@ -209,16 +180,16 @@ def get_driver(timeout=30):
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     help_text = (
-        "🔥 **4NOMALI CLOUD ENGINE v13.0** 🔥\n\n"
+        "🚀 **4NOMALI TURBO RDP ENGINE v14.0** 🚀\n\n"
         "Control Commands:\n"
         "/web <url> - Set target website\n"
         "/keyword <name1, name2> - Set names\n"
         "/email <email1, email2> - Set emails\n"
-        "/threads <num> - Set parallel workers (1-3 recommended for 1GB RAM)\n"
+        "/threads <num> - Set parallel workers (1-20)\n"
         "/gas - Start engine\n"
         "/stop - Emergency abort\n"
         "/status - Check configuration\n\n"
-        "Optimization: 4NOMALI Cloud is ready."
+        "Optimization: 8GB RAM RDP optimized."
     )
     bot.reply_to(message, help_text, parse_mode="Markdown")
 
@@ -259,18 +230,18 @@ def set_email(message):
 def set_threads(message):
     try:
         num = int(message.text.split(" ", 1)[1].strip())
-        if 1 <= num <= 5:
+        if 1 <= num <= 20:
             CONFIG["threads"] = num
             save_config()
-            bot.reply_to(message, f"✅ Thread Pool Set to: {num}\n⚠️ Note: 2 vCPU & 1GB RAM optimal at 2-3 threads.")
+            bot.reply_to(message, f"✅ Thread Pool Set to: {num}\n🚀 RDP Power: Up to 20 threads allowed.")
         else:
-            bot.reply_to(message, "❌ Pilih antara 1 sampai 5 thread saja bosku (ingat RAM 1GB).")
+            bot.reply_to(message, "❌ Pilih antara 1 sampai 20 thread.")
     except:
-        bot.reply_to(message, "❌ Format salah. Contoh: /threads 2")
+        bot.reply_to(message, "❌ Format salah. Contoh: /threads 10")
 
 @bot.message_handler(commands=['status'])
 def show_status(message):
-    status = "📊 **4NOMALI STATUS REPORT**\n----------------------------\n"
+    status = "📊 **4NOMALI TURBO STATUS**\n----------------------------\n"
     status += f"Web: `{CONFIG['target_web'] or '❌ Not Set'}`\n"
     status += f"Names: `{len(CONFIG['keywords'])} loaded`\n"
     status += f"Emails: `{len(CONFIG['emails'])} loaded`\n"
@@ -282,7 +253,7 @@ def show_status(message):
         status += f"\n🟢 **MISSION ACTIVE ({perc:.1f}%)**\n"
         status += f"✅ Success: `{s['success']}`\n"
         status += f"❌ Failed: `{s['failed']}`\n"
-        status += f"⏭️ Skipped: `{s['skipped']}`\n"
+        status += f"⏭️ Skipped/Purged: `{s['skipped']}`\n"
         status += f"📦 Processed: `{s['processed']}/{s['total']}`"
         if CONFIG["last_error"]:
             status += f"\n\n⚠️ **LAST ERROR:**\n`{CONFIG['last_error']}`"
@@ -294,7 +265,7 @@ def show_status(message):
 @bot.message_handler(commands=['stop'])
 def stop_engine(message):
     STOP_EVENT.set()
-    bot.reply_to(message, "🛑 Abort signal sent. System will stop after current URL.")
+    bot.reply_to(message, "🛑 Abort signal sent. Stopping.")
 
 @bot.message_handler(commands=['gas'])
 def run_engine(message):
@@ -303,7 +274,7 @@ def run_engine(message):
         return
     
     if not CONFIG["target_web"] or not CONFIG["keywords"] or not CONFIG["emails"]:
-        bot.reply_to(message, "❌ Konfigurasi belum lengkap! Atur /web, /keyword, dan /email dulu.")
+        bot.reply_to(message, "❌ Konfigurasi belum lengkap!")
         return
 
     CONFIG["is_running"] = True
@@ -311,21 +282,22 @@ def run_engine(message):
     
     targets = load_list("list.txt")
     if not targets:
-        bot.reply_to(message, "❌ **ERROR CRITICAL**\n`list.txt` tidak ditemukan atau kosong di server Railway.\n\nPastikan file `list.txt` sudah diupload ke GitHub di folder yang sama dengan `cloud_bot.py`.")
+        bot.reply_to(message, "❌ `list.txt` kosong.")
         CONFIG["is_running"] = False
         return
     
+    random.shuffle(targets)
     comments = load_list("komen.txt")
     if not comments:
-        bot.reply_to(message, "⚠️ **WARNING**\n`komen.txt` kosong. Bot akan menggunakan komentar default.")
+        comments = ["Nice article!", "Good post!"]
+        bot.reply_to(message, "⚠️ `komen.txt` kosong. Using defaults.")
 
-    # Reset & Init Stats
     CONFIG["current_stats"] = {
         "success": 0, "failed": 0, "skipped": 0, 
         "total": len(targets), "processed": 0, "done_threads": 0
     }
     
-    bot.reply_to(message, f"🚀 **MISSION STARTED**\nTarget: {len(targets)} URLs\nWorkers: {CONFIG['threads']} Threads")
+    bot.reply_to(message, f"🚀 **TURBO MISSION STARTED**\nTarget: {len(targets)} URLs\nWorkers: {CONFIG['threads']} Threads")
     
     num_threads = CONFIG["threads"]
     chunks = [targets[i::num_threads] for i in range(num_threads)]
@@ -341,7 +313,7 @@ def run_engine(message):
         if not chunk: 
             thread_callback()
             continue
-        threading.Thread(target=threaded_run, args=(message.chat.id, chunk, lock, thread_callback)).start()
+        threading.Thread(target=threaded_run, args=(message.chat.id, chunk, lock, thread_callback, comments)).start()
 
 def final_report(chat_id, stats):
     CONFIG["is_running"] = False
@@ -350,7 +322,7 @@ def final_report(chat_id, stats):
         "----------------------------\n"
         f"✅ SUCCESS : {stats['success']}\n"
         f"❌ FAILED  : {stats['failed']}\n"
-        f"⏭️ SKIPPED : {stats['skipped']}\n"
+        f"⏭️ PURGED  : {stats['skipped']}\n"
         f"🌍 PROCESSED: {stats['processed']}/{stats['total']}\n"
         "----------------------------\n"
     )
@@ -358,34 +330,22 @@ def final_report(chat_id, stats):
         final_msg += f"⚠️ **LAST ERROR:**\n`{CONFIG['last_error']}`"
     else:
         final_msg += "System Standby. Over and out."
-        
     bot.send_message(chat_id, final_msg, parse_mode="Markdown")
 
-def threaded_run(chat_id, chunk, lock, callback):
+def threaded_run(chat_id, chunk, lock, callback, comments):
     emails = CONFIG["emails"]
-    comments = load_list("komen.txt")
     driver = None
     try:
-        driver = get_driver()
-        # Initial wait to let resources settle
-        time.sleep(2)
+        driver = get_driver(timeout=25)
+        time.sleep(1)
         
         for target in chunk:
             if STOP_EVENT.is_set(): break
             
-            if not turbine_precheck(target):
-                with lock: 
-                    CONFIG["current_stats"]["skipped"] += 1
-                    CONFIG["current_stats"]["processed"] += 1
-                remove_from_list("list.txt", target)
-                continue
-            
             try:
-                # PHASE 1: Loading
                 driver.get(target)
-                time.sleep(random.uniform(5, 8))
+                time.sleep(random.uniform(2, 4))
                 
-                # PHASE 2: Identity & Simulation
                 load_cookies(driver, target)
                 ghost_behavior(driver)
                 solve_math(driver)
@@ -393,11 +353,9 @@ def threaded_run(chat_id, chunk, lock, callback):
                 nick = random.choice(CONFIG["keywords"])
                 mail = random.choice(emails)
                 site = CONFIG["target_web"]
-                comment = random.choice(comments) if comments else "Nice article!"
+                comment = random.choice(comments)
                 
-                # PHASE 3: Detection & Input
                 box = None
-                time.sleep(2)
                 for p in ["//textarea[contains(@id, 'comment')]", "//textarea[contains(@name, 'comment')]", "//textarea"]:
                     try:
                         el = driver.find_element(By.XPATH, p)
@@ -416,7 +374,7 @@ def threaded_run(chat_id, chunk, lock, callback):
                         except: pass
                     
                     box.send_keys(comment)
-                    time.sleep(2)
+                    time.sleep(1)
                     
                     submit = None
                     for p in ["//input[@type='submit']", "//button[@type='submit']", "//*[contains(@id, 'submit')]"]:
@@ -427,18 +385,20 @@ def threaded_run(chat_id, chunk, lock, callback):
                     
                     if submit:
                         driver.execute_script("arguments[0].click();", submit)
-                        time.sleep(4)
+                        time.sleep(3)
                         save_cookies(driver, target)
                         with lock: CONFIG["current_stats"]["success"] += 1
+                        remove_from_list("list.txt", target)
                     else: 
                         with lock: 
                             CONFIG["current_stats"]["failed"] += 1
-                            CONFIG["last_error"] = "Submit button hidden"
+                            CONFIG["last_error"] = "Submit button hidden/protected"
+                        remove_from_list("list.txt", target) # Clear it
                 else:
                     with lock: CONFIG["current_stats"]["skipped"] += 1
-                    remove_from_list("list.txt", target)
+                    remove_from_list("list.txt", target) # Clear dead links
                     
-                time.sleep(5) 
+                time.sleep(1) 
                 
             except Exception as e: 
                 err_msg = str(e)
@@ -446,8 +406,10 @@ def threaded_run(chat_id, chunk, lock, callback):
                     CONFIG["current_stats"]["failed"] += 1
                     CONFIG["last_error"] = f"Target Error: {err_msg[:100]}"
                 
+                if "connection" in err_msg.lower() or "timeout" in err_msg.lower() or "404" in err_msg:
+                    remove_from_list("list.txt", target)
+                
                 if "tab crashed" in err_msg.lower() or "session" in err_msg.lower():
-                    time.sleep(10)
                     try:
                         driver.quit()
                         driver = get_driver()
@@ -464,6 +426,6 @@ def threaded_run(chat_id, chunk, lock, callback):
         callback()
 
 if __name__ == "__main__":
-    load_config() # Restore previous mission settings
-    print(f"4NOMALI Telegram Bot Started... Path: {DATA_DIR}")
+    load_config()
+    print(f"4NOMALI TURBO Started... Path: {DATA_DIR}")
     bot.infinity_polling()
